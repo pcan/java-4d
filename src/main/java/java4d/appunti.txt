@@ -1,0 +1,181 @@
+elementi livello zero (esclusi FLYZ e AMBI)
+BSP_
+CAM_ sembra avere un int in piu rispetto a mesh dopo il sistema di rif.
+DUMY
+LITE
+MESH
+SKIN
+SKVS
+SSQS deve essere ultimo, altrimenti l'editor segnala errore di sequenza (!)
+
+differenze tra v100 e v101:
+MESH:
+    dati interni, *dopo* il nome della mesh: 52 byte->v100; 60 byte->v101
+    Il primo int (che per la prima mesh è FFFF FFFF) rappresenta l'index della mesh madre,
+    ovvero su quale mesh bisognerà fare pushmatrix. In tal modo la mesh madre diventa il
+    sistema di riferimento per il disegno della mesh corrente.
+    (v101) gli altri due int (tutti FF) ancora non so ke cosa sono...
+DUMY:
+    dati interni: stessa cosa di mesh,dopo il nome,
+    in pratica nella 100 ci sono 4 byte di FF, invece nella 101 ce ne sono 12
+CAM_:
+    vedi nota in alto
+
+
+
+informazioni varie sulle sections:
+MATE (e STRP):
+    dati interni: generalmente (fino ad ora, sempre):
+    1o int: (MATE) numero di record di INDI diviso 3 (sarà il numero di triangoli a cui si
+            applica il materiale corrente);
+            (STRP) esattamente il numero di record di INDI - 2 (l'ultimo triangolo dello
+            stripe forse è implicitamente incluso)
+    2o int: (generalmente zero): probabilmente l'indice del VERTICE d'inizio a cui
+            applicare il materiale;
+    3o int: (generalmente il conteggio dei vertici): probabilmente l'indice del VERTICE
+            ultimo fino al quale si applica il materiale.
+
+    credo che lo zero, cosi come l'esatto conteggio dei vert e dei triangoli ecc.. sia dovuto
+    al fatto ke in tutte le sezioni MTLS, il MATE (o STRP) è uno solo, altrimenti (credo)
+    il 1o int indica a quanti triangoli applicare il materiale (dopo quelli gia processati
+    dai precedenti STRP e MATE) e il 2o e 3o int indicano vertice inizio e fine (anche se
+    mi sembra ridondante, vabbè...)
+LITE:
+    dati interni:
+    stessa struttura di mesh, in più ha un'informazione di versione (come scen), un
+    vettore di 3 float (colore luce RGB) e un singolo float finale (intensità, moltiplica
+    l'rgb dato, è una sorta di saturatore verso il bianco).
+SPOT: ci sono 6 float, tutti con corrispondenza in OpenGL tranne il primo (specifico di DX?):
+	1) massima distanza a cui illumina il cono (taglio netto, indipendente dalle attenuazioni)
+	2) termine GL_CONSTANT_ATTENUATION
+	3) termine GL_LINEAR_ATTENUATION
+	4) termine GL_QUADRATIC_ATTENUATION 
+	5) termine GL_SPOT_EXPONENT (esponente che controlla la concentrazione)
+	6) termine GL_SPOT_CUTOFF (ampiezza in gradi per openGL, radianti per i 4d)
+PONT: sottosezione di LITE come SPOT, manca di esponente e cutoff, è luce omnidirezionale
+
+BONS:
+    1) int: dice a quale DUMY (aggancio per l'anim) si riferisce il bone corrente.
+       N.B.: questo "indice" è riferito ad un array composto soltanto da elementi
+       "posizionabili", come i DUMY, l'SKVS ecc... Gli altri come FLYZ, AMBY, ecc, non
+       sono contemplati nella lista.
+    2) matrice di trasformazione
+MTBL (sottosezione di MTLS di SKVS):
+    contiene una lista di interi pari al numero di bones. è una mappa, tra posizione di
+    intero nella lista di MTBL (questa) e l'indice del bone nella lista BONS
+VERT di SKVS:
+    2 interi iniziali (in genere 8 e 4)
+    ciascun vertice:
+        la prima parte come il VERT comune delle MESH
+        seconda parte: 4 byte che identificano l'indice di 4 bones di BONS
+        4 float, ovvero 4 pesi delle bones indicizzate
+        4 byte che identificano l'indice nella sezione MTBL che mapperà altrettanti
+        bones da BONS. Sembra che le animazioni facciano riferimento a questa corrispondenza
+        quando si ha la gerarchia ANIM->DUMY->BONE *<->* VERT
+        i primi dati (quelli riferiti alle BONS direttamente) sembrano non influire
+        ne come indici, ne come pesi nell'editor. Nel gioco sembra essere il viceversa
+        ovvero, i primi dati sono quelli che contano, la seconda parte non conta nulla.
+        P.S. Il primo dei 2 interi di inizio sezione indica la versione: quella descritta
+        ora è la 8, poi esiste la 2 che manca del secondo gruppo di bones e pesi (vedi partisan.4d),
+        quelli che in pratica si riferiscono a MTBL. La stessa MTBL manca nella versione 2.
+        A questo punto dato che il 4 (secondo int) compare anche nella versione 2, penso
+        indichi il numero di bones che influiscono su ciascun vertice.
+
+
+
+
+
+caricamento della struttura dati:
+
+j4d_file_manager.loadFile chiama -> sectListManager.getSect
+
+(ricorsione) {
+
+    getSect individua il tipo di sezione, la crea
+
+    sectListManager.getSect chiama -> sect.loadData
+
+        loadData carica i dati interni, e se avanzano dati,
+        {
+            sect.loadData chiama -> sectListManager.getList
+
+            getList crea la lista linkata, e per ciascuna sezione:
+
+                sectListManager.getList chiama -> sectListManager.getSect (ricorsione)
+
+            getList ritorna la lista
+        }
+}
+
+
+funzionamento dell'editing e dei menu:
+si individua l'oggetto sect dall'albero jtree:
+    jTree1.setSelectionPath(p);
+    myNode n = ((myNode)p.getLastPathComponent());
+si fa apparire il relativo menu (se esiste, altrimenti un "default")
+    n.getSect().getEditMenu().getPopupMenu().show(.....)
+
+    *getEditMenu() cerca di trovare un menu adatto alla sect corrente, altrimenti
+    da il default
+
+se l'edit menu contiene una voce che chiama l'editor (se appunto esiste un editor per
+la sect corrente), si ha (owner sarebbe la sect; questo è chiamato dal listener creato nel
+costruttore di sectMenu):
+
+    owner.showEditor();
+
+showeditor (metodo di sect) crea un thread che apre la finestra, si addormenta e aspetta
+che la finestra si chiuda e lo svegli (se ne occupa la la classe astratta sectEditor in
+chiusura) con un interrupt, a questo punto il thread chiede se si vuole salvare le
+modifiche; se sì, allora lascia la sectData che si è appena modificata, altrimenti
+la sostituisce con una copia di backup precedentemente ottenuta da sdata.clone()
+
+
+
+caricare un file png (la directory sta sotto src)
+ImageIcon i =IconFactory.getIcon("java4d/images/image3.png");
+
+
+
+quando dovrò caricare da una linkedlist (a) di dumy, mesh e lite la gerarchia di disegno,
+avrò bisogno del parentEntityId di ciascun elemento, senza poter sapere a priori l'elemento
+stesso di che tipo è. questo evita il casting selettivo:
+1) individuo il campo (che ha sempre lo stesso nome per i vari tipi di sectData d'interesse)
+Field fld= a.get(i).getSectionData().getClass().getField("parentEntityId");
+2) dico al field (che ora è cast-specific) di prendere il valore dall'oggetto sectData
+corrente. Questo non da problemi perchè l'oggetto field è stato creato a partire dallo
+stesso oggetto da cui ora prendo i dati.
+int k=fld.getInt(a.get(i).getSectionData()); ##FATTO##
+
+
+IDEA: struttura dati chunk-based, general purpose.
+oggetto chunk:
+contiene un'array di oggetti mytype (myint, myvector, myfloat ecc, ciascuno col suo getFrom
+e toBytes) e una linked list di sottochunk. Al momento della lettura dal file, individuato
+il tipo di chunk, mi faccio dire da un oggetto ke ha letto il mio file di specifica (che
+contiene righe del tipo: 0x1234=Chunk1 desc...;myInt,myFloat,infoLabel) cosa può contenere
+(secondo specifica) il chunk corrente Chunk1.
+A questo punto l'array di oggetti mytype viene popolato coi tipi letti, usando:
+Class.forName(nomePassatoDallaSpecifica[i]).newInstance();
+Per la scrittura e lettura, non ci sono problemi tanto si farà:
+fieldList[i].getFrom(....)
+dove fieldList è un array di oggetti myType (quindi tutti implementano getFrom).
+Se ho bisogno di leggere un myFloat, basta usare il cast (conosco ovviamente l'ubicazione
+precisa in fieldList, caso di un oggetto che sta "consumando" in maniera utile i dati e
+ne conosce la perfetta struttura):
+float f = myFloat.class.cast(fieldList[known_index]).getVal();
+NOTA: (nata dalle differenze tra i file 3ds e i 4d)
+nel file di specifica ci vuole un campo ke deve dire se il campo dimensione di ciascun
+chunk è riferito all'intero chunk (campo nome e dimensione inclusi) oppure riguarda
+soltanto i sottodati e sottochunk. ##FATTO##
+
+
+
+cancellazione sicura di oggetti simil-mesh dall'albero:
+myNode n = ((myNode)p.getLastPathComponent());
+if(sectMESH.class.isInstance(n.getSect()))
+{
+    ((sectSCEN)s).deleteChild((sectMESH)n.getSect());
+    sectJTreeBuilder.draw(s, jTree1);
+    k.getGlEventListener().updateRendering();
+}

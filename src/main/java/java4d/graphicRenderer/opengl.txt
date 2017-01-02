@@ -1,0 +1,132 @@
+opengl - cose da fare:
+
+1)  impostare il ClearColor (sfondo) e z-buffer (profondità, ovvero quanto
+    ciascun bit è distante dall'occhio)
+
+glClearColor(0.0, 0.0, 0.0, 0.0);
+glClearDepth(0.0);
+
+2)  pulire i buffer
+
+glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+3) impostare le proiezioni (scelta della lente)
+
+ glMatrixMode (GL_PROJECTION);    /* prepare for and then */
+    glLoadIdentity ();               /* define the projection */
+    glFrustum (left, right, bottom, top, /* transformation */
+                  zNear,  zFar);
+
+nota: glfrustum non è usato spesso... si usa gluperspective:
+
+void gluPerspective(GLdouble angolox-z, GLdouble aspect (w/h),
+        GLdouble zNear (inizio tronco), GLdouble zFar (fine tronco));
+
+glViewport(0, 0, w, h); (per evitare distorsioni sono le stesse w e h dell'aspect)
+
+come calcolare angolox-z? (dal libro opengl progr. guide, esempio 3-3)
+#define PI 3.1415926535
+
+double calculateAngle(double size, double distance)
+{
+    double radtheta, degtheta;
+
+    radtheta = 2.0 * atan2 (size/2.0, distance);
+    degtheta = (180.0 * radtheta) / PI;
+    return (degtheta);
+}
+Of course, typically you don't know the exact size of an object, and the distance
+can only be determined between the viewpoint and a single point in your scene.
+To obtain a fairly good approximate value, find the bounding box for your scene
+by determining the maximum and minimum x, y, and z coordinates of all the objects
+in your scene. Then calculate the radius of a bounding sphere for that box, and use
+the center of the sphere to determine the distance and the radius to determine the size.
+
+4) si puo disegnare... bisogna passare a modelview
+
+
+
+come è andata a finire:
+
+1)  init
+
+     gl.glClearColor((float)233/255,(float)227/255, 1.0f, 0.0f);
+     gl.glClearDepth(1.0f);
+     gl.glDepthFunc(GL.GL_LEQUAL);
+     gl.glEnable(GL.GL_DEPTH_TEST);
+
+2)  Setup luci
+
+    float LightAmbient[]= { 0.5f, 0.5f, 0.5f, 1.0f };
+    float LightDiffuse[]= { 0.7f, 0.7f, 0.7f, 1.0f };
+    float LightPosition[]= { 1.0f, 1.0f, 5.0f, 1.0f };
+    gl.glLightfv(gl.GL_LIGHT0, gl.GL_AMBIENT, LightAmbient,0);
+    gl.glLightfv(gl.GL_LIGHT0, gl.GL_DIFFUSE, LightDiffuse,0);
+    gl.glLightfv(gl.GL_LIGHT0, gl.GL_POSITION,LightPosition,0);
+    gl.glEnable(gl.GL_LIGHT0);
+    gl.glEnable(gl.GL_LIGHTING);
+
+3)  funzione reshape, chiamata ad ogni ridimensionamento (anche all'inizio)
+
+    int curmode[]=new int[1];
+    gl.glGetIntegerv(gl.GL_MATRIX_MODE, curmode,0);
+    gl.glMatrixMode(gl.GL_PROJECTION);
+    gl.glLoadIdentity();
+    float aspect = (float)width/(float)height;
+    //set fov angle, aspect ratio, min and max distance of view
+    glu.gluPerspective(40.0f, aspect, 0.01f, -1);
+    gl.glViewport(x, y, width, height);
+    gl.glMatrixMode(curmode[0]);
+
+4)  funzione display:
+
+    gl.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT);
+    drawObjects(gl);
+    gl.glFlush();
+
+5)  disegno oggetti:
+
+    gl.glPushMatrix();
+
+        gl.glTranslatef(0, 0, -20.0f);
+        gl.glRotatef(30,1,0,0);
+
+        drawaxis();
+
+        float mat_diff[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+        gl.glMaterialfv(GL.GL_FRONT, gl.GL_AMBIENT_AND_DIFFUSE, mat_diff, 0);
+
+        gl.glEnable(gl.GL_COLOR_MATERIAL);
+        gl.glColor3f(1.0f,1.0f,0.1f);
+        gl.glColorMaterial(gl.GL_FRONT,gl.GL_DIFFUSE );
+
+
+        gl.glPushMatrix();
+            disegno.......
+
+
+per le trasparenze, impostare il valore desiderato dell'alfa in color4f, poi:
+    gl.glBlendFunc(GL.GL_SRC_ALPHA,GL.GL_ONE_MINUS_SRC_ALPHA);
+    gl.glEnable(GL.GL_BLEND);
+
+
+cubi:
+gl.glPushMatrix();
+                glut.glutSolidCube(4);
+            gl.glPopMatrix();
+
+            gl.glTranslatef(-3, -1, 1);
+
+            gl.glPushMatrix();
+                glut.glutSolidCube(2);
+                //glut.glutWireCube(2);
+            gl.glPopMatrix();
+
+            gl.glTranslatef(5, 0, 1f);
+
+            gl.glColor3f(0.6f,0.0f,0.0f);
+
+            gl.glPushMatrix();
+
+                //glut.glutWireCube(2);
+            gl.glPopMatrix();
